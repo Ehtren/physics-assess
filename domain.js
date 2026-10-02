@@ -173,3 +173,20 @@ export async function setStatus(S, ctx, unit, status, note, rec) {
   await S.put('status', { id: uuid4(), student: ctx.student, unit, teacher_status: status, note: note || '', rec_at_time: rec.s, ruleset: RULES.v, at: now() });
 }
 export async function waive(S, ctx, unit, note) { ctx.waivers[unit] = { note, at: now() }; await S.put('kv', ctx); }
+
+// ---- AI review reports and batch approval (teacher presses the button; nothing is automatic) ----
+export async function importReviews(S, rep) {
+  for (const r of rep.reviews) await S.put('review', { id: uuid4(), kind: 'ai', code: r.code, hash: r.hash, verdict: r.verdict, checks: r.checks, note: r.note || '', reviewer: rep.reviewer, criteria: rep.criteria_version, at: now() });
+  return rep.reviews.length;
+}
+export async function aiVerdicts(S) { const m = {}; (await S.all('review')).filter(r => r.kind === 'ai').sort((a, b) => a.at < b.at ? -1 : 1).forEach(r => m[r.code] = r); return m; }
+export async function batchApprove(S, cur) {
+  const V = await aiVerdicts(S); let n = 0;
+  for (const q of await S.all('question')) {
+    const r = V[q.code]; if (!r || r.hash !== q.hash || r.verdict !== 'pass' || ['teacher_approved', 'retired'].includes(q.stage) || validateQ(cur, q).length) continue;
+    if (q.stage === 'draft') await advanceQ(S, cur, q, 'structurally_validated');
+    if (q.stage === 'structurally_validated') await advanceQ(S, cur, q, 'content_reviewed', true);
+    await advanceQ(S, cur, q, 'teacher_approved'); await S.put('review', { id: uuid4(), kind: 'batch', q: q.id, basis: 'ai_report', report: r.id, at: now() }); n++;
+  }
+  return n;
+}
