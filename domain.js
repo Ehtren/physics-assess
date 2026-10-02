@@ -38,7 +38,16 @@ export async function addTeaching(S, ctx, sections, date) {
 }
 // ---- question bank ----
 export async function importPack(S, pack) {
-  for (const q of pack.questions) await S.put('question', { id: uuid4(), version: 1, stage: 'draft', source_type: 'ai_generated', prov: { generator: pack.generator, spec: pack.spec }, hash: hash(JSON.stringify(q)), ...q, created: now() });
+  const have = {}; (await S.all('question')).forEach(q => { if (q.stage !== 'retired' && (!have[q.code] || q.version > have[q.code].version)) have[q.code] = q; });
+  let added = 0, updated = 0, same = 0;
+  for (const q of pack.questions) {
+    const h = hash(JSON.stringify(q)), old = have[q.code], base = { stage: 'draft', source_type: 'ai_generated', prov: { generator: pack.generator, spec: pack.spec }, hash: h, ...q, created: now() };
+    if (!old) { await S.put('question', { id: uuid4(), version: 1, ...base }); added++; }
+    else if (old.hash === h) same++;
+    else if (old.stage === 'draft') { await S.put('question', { ...base, id: old.id, version: old.version }); updated++; }
+    else { old.stage = 'retired'; await S.put('question', old); await S.put('question', { id: uuid4(), ...base, version: old.version + 1 }); updated++; }
+  }
+  return { added, updated, same };
 }
 export function validateQ(cur, q) {
   const e = [], add = (id, msg) => e.push({ id, msg }), M = om(cur);
