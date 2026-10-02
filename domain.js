@@ -105,8 +105,8 @@ export async function markAttempt(S, cur, ctx, raw) { // raw = { paper, mode, re
     const q = await S.get('question', qid), r = raw.responses[qid], it = { id: uuid4(), qv: q.id, resp: r ?? '', seen: seen.has(q.code),
       snap: { code: q.code, version: q.version, hash: q.hash, fmt: q.fmt, marks: q.marks, ao: q.ao, dim: q.dim, unf: q.unf, diff: q.diff, source_type: q.source_type, obj: q.o, unit: unitOf(cur, q), section: sectionOf(cur, q), sch: q.sch, taught: taught.has(sectionOf(cur, q)), mode: raw.mode } };
     let m = null;
-    if (q.fmt === 'mcq') m = Number(r) === q.key ? q.marks : 0;
-    if (q.fmt === 'numeric') m = Math.abs(parseFloat(r) - q.num.v) <= q.num.tol ? q.marks : 0;
+    if (q.fmt === 'mcq') m = r !== '' && r != null && Number(r) === q.key ? q.marks : 0;
+    if (q.fmt === 'numeric') m = Math.abs(parseFloat(String(r).replace(',', '.')) - q.num.v) <= q.num.tol ? q.marks : 0;
     if (m !== null) awards.push({ id: uuid4(), item: it.id, marks: m, by: 'auto', confirmed: true, at: now() });
     items.push(it);
   }
