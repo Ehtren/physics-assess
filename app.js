@@ -39,19 +39,22 @@ const V = {
   },
   async bank() {
     const qs = (await S.all('question')).sort((a, b) => a.code < b.code ? -1 : 1), M = Object.fromEntries(cur.objs.map(o => [o.code, o])), L = ['familiar', 'slightly unfamiliar', 'unfamiliar'];
+    const V = await D.aiVerdicts(S), rev = q => { const r = V[q.code]; return !r ? '' : r.hash !== q.hash ? ' <span class=tag>AI review outdated</span>' : r.verdict == 'pass' ? ' <span class="tag G">AI review: OK</span>' : ' <span class="tag R">AI review: needs a fix</span>'; };
+    const elig = qs.filter(q => V[q.code]?.hash == q.hash && V[q.code].verdict == 'pass' && !['teacher_approved', 'retired'].includes(q.stage) && !D.validateQ(cur, q).length).length;
+    const quick = `<div class=card><b>Quick approval (AI review)</b><br><small>Load the review report, then approve every question it marked OK in one click. You stay in charge: nothing is approved until you tick the box and press the button, and you can still open any question first.</small><br><input type=file data-f=review accept=.json> <small>ai-review-report-unit1.json</small>${elig ? `<br><label><input type=checkbox id=accept> I accept the AI review for these ${elig} questions</label> <button data-a=batch>Approve ${elig} questions</button>` : ''}<details><summary><small>What the AI review checks</small></summary><ol><small><li>The physics is correct<li>The answer is correct (numbers recomputed)<li>Mark scheme points add up, can be earned, and do not just repeat the question<li>Wording has one defensible answer and sensible wrong options<li>Tags (AO, skill, difficulty, command word) are plausible<li>The syllabus objective fits the question<li>The level suits Extended A* practice<li>The automatic checks also pass</small></ol></details></div>`;
     const ST = { draft: 'draft', structurally_validated: 'system checks passed', content_reviewed: 'reviewed by you', teacher_approved: 'approved', retired: 'retired' };
     const card = q => {
       const errs = D.validateQ(cur, q);
       const ans = q.fmt == 'mcq' ? `<ol type=A>${q.opts.map((o, i) => `<li ${i == q.key ? 'class=G' : ''}>${esc(o)}${i == q.key ? ' ✓ correct answer' : ''}`).join('')}</ol>` : q.fmt == 'numeric' ? `<p>Correct answer: <b>${q.num.v} ${esc(q.num.u || '')}</b> (accepts ±${q.num.tol}). Recompute check: <code>${esc(q.chk || 'none')}</code></p>` : '';
       const next = { draft: `<button data-a=adv data-v=${q.id} data-to=structurally_validated>1. Run automatic checks</button>`, structurally_validated: `<label><input type=checkbox id=sc${q.id}> I checked the question, answer, mark scheme and tags</label> <button data-a=adv data-v=${q.id} data-to=content_reviewed>2. Mark as reviewed</button>`, content_reviewed: `<button data-a=adv data-v=${q.id} data-to=teacher_approved>3. Approve for use</button>` }[q.stage] || '';
-      return `<details class=card ${op('q' + q.id)}><summary><b>${q.code}</b> ${esc(q.p.length > 70 ? q.p.slice(0, 70) + '…' : q.p)} <small>· ${q.marks} mark${q.marks > 1 ? 's' : ''} · ${q.fmt}</small> <span class=tag>${ST[q.stage]}</span></summary>
+      return `<details class=card ${op('q' + q.id)}><summary><b>${q.code}</b> ${esc(q.p.length > 70 ? q.p.slice(0, 70) + '…' : q.p)} <small>· ${q.marks} mark${q.marks > 1 ? 's' : ''} · ${q.fmt}</small> <span class=tag>${ST[q.stage]}</span>${rev(q)}</summary>
       <p>${esc(q.p)}</p>${ans}<b>Mark scheme</b><ul>${(q.sch || []).map(s => `<li>${esc(s.t)} <small>(${s.m})</small>`).join('')}</ul><p><b>Feedback in learning mode:</b> ${esc(q.fb || '(none)')}</p>
       <p><b>Tags:</b> ${q.ao} · ${q.dim} · command word "${q.cw}" · ${q.diff} · ${L[q.unf]} context</p><b>Syllabus objectives</b><ul>${q.o.map(c => `<li><small>${c.split(':')[1]} ${M[c]?.tier || ''}</small> ${esc(M[c]?.label || 'UNKNOWN OBJECTIVE')}`).join('')}</ul>
       <p><small>Source: <span class=tag>${q.source_type.replace('_', ' ')}</span> · code ${q.code} · version ${q.version} · ${esc(q.prov?.generator || '')}</small></p>
       <p class=${errs.length ? 'R' : 'G'}>${errs.length ? 'Automatic checks failed: ' + errs.map(e => e.id + ' ' + esc(e.msg)).join('; ') : '✓ Passes the automatic checks'}</p><p>${next} ${q.stage != 'retired' ? `<button data-a=adv data-v=${q.id} data-to=retired>Retire</button>` : ''}</p></details>`;
     };
     const grp = (t, f) => { const x = qs.filter(f); return x.length ? `<h4>${t} (${x.length})</h4>${x.map(card).join('')}` : ''; };
-    return `<h3>Questions</h3><p>Your question library. Every new question starts as a <b>draft</b>. Open one, read it with its answer, mark scheme and tags, then move it forward. Only <b>approved</b> questions can go into a paper.</p><p><input type=file data-f=pack accept=.json> <small>add questions (starter-pack-unit1.json)</small></p>` + (qs.length ? grp('Needs your review', q => !['teacher_approved', 'retired'].includes(q.stage)) + grp('Approved', q => q.stage == 'teacher_approved') + grp('Retired', q => q.stage == 'retired') : '<p><b>No questions yet.</b> Choose the starter pack file above.</p>');
+    return `<h3>Questions</h3><p>Your question library. Every new question starts as a <b>draft</b>. Open one, read it with its answer, mark scheme and tags, then move it forward. Only <b>approved</b> questions can go into a paper.</p><p><input type=file data-f=pack accept=.json> <small>add questions (starter-pack-unit1.json)</small></p>${quick}` + (qs.length ? grp('Needs your review', q => !['teacher_approved', 'retired'].includes(q.stage)) + grp('Approved', q => q.stage == 'teacher_approved') + grp('Retired', q => q.stage == 'retired') : '<p><b>No questions yet.</b> Choose the starter pack file above.</p>');
   },
   async papers() {
     const ps = await S.all('paper'), n = (await S.all('question')).filter(q => q.stage == 'teacher_approved').length;
@@ -99,6 +102,7 @@ const act = {
     PL.raw = raw;
   },
   mark: async el => { const id = el.dataset.v; if (document.getElementById('m' + id).value === '') throw Error('Enter a mark first'); const it = (await S.all('attempt')).flatMap(a => a.items).find(i => i.id == id); await D.teacherMark(S, it, +document.getElementById('m' + id).value, document.getElementById('n' + id).value); },
+  batch: async () => { if (!document.getElementById('accept')?.checked) throw Error('Tick the box to confirm first'); MSG = `${await D.batchApprove(S, cur)} questions approved.`; },
   backup: async () => save('backup.json', await S.exportAll()),
   expatt: async () => save('attempts.json', (await S.all('attempt')).map(a => ({ paper: a.paper, mode: a.mode, submitted: a.submitted, responses: Object.fromEntries(a.items.map(i => [i.qv, i.resp])) })))
 };
@@ -108,6 +112,7 @@ document.addEventListener('change', async e => {
   try {
     const j = await readFile(e.target.files[0]); e.target.value = '';
     if (f == 'cur') { await D.importCurriculum(S, j); MSG = 'Curriculum imported.'; }
+    if (f == 'review') { MSG = `Loaded ${await D.importReviews(S, j)} review results.`; }
     if (f == 'pack') { const r = await D.importPack(S, j); MSG = `${r.added} new, ${r.updated} updated, ${r.same} unchanged. New and updated questions are drafts: nothing reaches the student until you approve it.`; }
     if (f == 'pack2') { PL = { pack: j, mode: 'exam' }; view = 'student'; }
     if (f == 'att') { for (const r of j) await D.markAttempt(S, cur, ctx, r); MSG = `Imported ${j.length} attempts.`; }
